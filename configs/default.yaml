@@ -4,10 +4,8 @@ data:
   root: "data/BEAT_v2/segment"
   motion_dim: 60
   audio_dim: 512
-  motion_frames: 300     # 原始长度，用于上采样还原
-  motion_downsample_ratio: 8   # motion 进 diffusion 前 8 倍下采样
+  motion_frames: 300     # motion 帧数（不再对 motion 做 8 倍下采样）
   audio_downsample_ratio: 10   # audio 50fps→5fps，10 倍下采样
-  motion_frames_low: 40        # 下采样后 motion 帧数 (300/8 取整且整除 patch_size)
   audio_frames_low: 25         # 下采样后 audio 帧数 (250/10 或 300/12)
   train_ratio: 0.95
 
@@ -15,8 +13,8 @@ model:
   dim: 1024               # 约 300M 参数（dim=1024, depth=24 -> ~308M）
   depth: 24
   heads: 16
-  patch_size: 5          # temporal patch（对下采样后的 motion 长度 40）
-  num_patches: 8         # 40 / 5
+  patch_size: 5          # temporal patch
+  num_patches: 60        # motion_frames / patch_size = 300 / 5
   cond_drop_prob: 0.1
 
 diffusion:

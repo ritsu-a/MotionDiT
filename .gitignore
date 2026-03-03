@@ -3,3 +3,4 @@ checkpoints/
 *.pyc
 samples/
 checkpoints
+*.mp4

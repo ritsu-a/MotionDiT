@@ -104,12 +104,11 @@ class BEATSegmentDataset(Dataset):
         if audio.shape[0] != self.motion_frames:
             audio = self._align_audio_to_motion(audio, self.motion_frames)
 
-        # 进 diffusion 前下采样：motion 8 倍、audio 10 倍（与 config motion_frames_low / audio_frames_low 一致）
-        motion_low = zoom(motion, (self.motion_frames_low / motion.shape[0], 1.0), order=1).astype(np.float32)
+        # motion 不再下采样，直接使用 motion_frames 长度；audio 仍按 audio_frames_low 下采样
         audio_low = zoom(audio, (self.audio_frames_low / audio.shape[0], 1.0), order=1).astype(np.float32)
 
         return {
-            "motion": torch.from_numpy(motion_low),   # (motion_frames_low, 60)
+            "motion": torch.from_numpy(motion.astype(np.float32)),   # (motion_frames, 60)
             "audio": torch.from_numpy(audio_low),    # (audio_frames_low, 512)
         }
 

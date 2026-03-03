@@ -1,2 +1,2 @@
 Visualization of generated motion (npz with qpos):
-    python external/GMR/scripts/vis_npz_motion.py --npz_path samples/motion_0000.npz --video_path samples/motion_0000.mp4 --motion_fps 30
+    python external/GMR/scripts/vis_npz_motion.py --npz_path /root/workspace/MotionDiT/data/BEAT_v2/segment/1_1_wayne_0_1_1_seg001.npz --video_path stest.mp4 --motion_fps 60

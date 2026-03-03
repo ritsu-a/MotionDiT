@@ -1,7 +1,6 @@
 """
 从训练好的 DiT 采样：给定 audio condition，生成 motion。
 支持 classifier-free guidance (cfg_scale)。
-Diffusion 在低帧率上生成，输出会上采样回 motion_frames。
 可选：用 GMR 将生成的 npz 渲染为视频。
 """
 import os
@@ -87,7 +86,7 @@ def main():
     model = MotionDiT(
         motion_dim=cfg["data"]["motion_dim"],
         audio_dim=cfg["data"]["audio_dim"],
-        motion_frames=cfg["data"]["motion_frames_low"],
+        motion_frames=cfg["data"]["motion_frames"],
         patch_size=cfg["model"]["patch_size"],
         dim=cfg["model"]["dim"],
         depth=cfg["model"]["depth"],
@@ -110,7 +109,7 @@ def main():
         root=data_cfg["root"],
         train=False,
         motion_frames=data_cfg["motion_frames"],
-        motion_frames_low=data_cfg["motion_frames_low"],
+        motion_frames_low=data_cfg["motion_frames"],
         audio_frames_low=data_cfg["audio_frames_low"],
         motion_dim=data_cfg["motion_dim"],
         audio_dim=data_cfg["audio_dim"],
@@ -128,8 +127,7 @@ def main():
             ddim_steps=ddim_steps,
             ddim_eta=args.ddim_eta,
         )
-        motion_gen = motion_gen[0]  # (motion_frames_low, 60)
-        motion_gen = upsample_motion(motion_gen, data_cfg["motion_frames"])  # 还原到 300 帧
+        motion_gen = motion_gen[0]  # (motion_frames, 60)，已为全长度无需上采样
         out_path = os.path.join(args.output_dir, f"motion_{i:04d}.npz")
         np.savez(out_path, qpos=motion_gen.astype(np.float32))
         print(f"Saved {out_path} qpos shape {motion_gen.shape}")

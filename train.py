@@ -59,7 +59,7 @@ def main():
         batch_size=cfg["train"]["batch_size"],
         train_ratio=cfg["data"]["train_ratio"],
         motion_frames=cfg["data"]["motion_frames"],
-        motion_frames_low=cfg["data"]["motion_frames_low"],
+        motion_frames_low=cfg["data"]["motion_frames"],
         audio_frames_low=cfg["data"]["audio_frames_low"],
         motion_dim=cfg["data"]["motion_dim"],
         audio_dim=cfg["data"]["audio_dim"],
@@ -68,7 +68,7 @@ def main():
     model = MotionDiT(
         motion_dim=cfg["data"]["motion_dim"],
         audio_dim=cfg["data"]["audio_dim"],
-        motion_frames=cfg["data"]["motion_frames_low"],
+        motion_frames=cfg["data"]["motion_frames"],
         patch_size=cfg["model"]["patch_size"],
         dim=cfg["model"]["dim"],
         depth=cfg["model"]["depth"],
