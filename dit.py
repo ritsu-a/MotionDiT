@@ -104,14 +104,20 @@ class MotionDiT(nn.Module):
 
     def forward(self, motion: torch.Tensor, audio: torch.Tensor, t: torch.LongTensor):
         """
-        motion: (B, T, motion_dim), 加噪后的 motion
-        audio:  (B, T, audio_dim)
+        motion: (B, T_m, motion_dim), 加噪后的 motion
+        audio:  (B, T_a, audio_dim)，若 T_a != T_m 会在时间维上插值到 T_m
         t:      (B,) 时间步
         """
         B = motion.shape[0]
+        T_m = motion.shape[1]
+        if audio.shape[1] != T_m:
+            # audio 时间维与 motion 对齐（如 25→40），便于 patch 后 concat
+            audio = torch.nn.functional.interpolate(
+                audio.permute(0, 2, 1), size=T_m, mode="linear", align_corners=False
+            ).permute(0, 2, 1)
         # Patchify
         x_m = patchify(motion, self.patch_size)   # (B, n, patch_motion_dim)
-        x_a = patchify(audio, self.patch_size)    # (B, n, patch_audio_dim)
+        x_a = patchify(audio, self.patch_size)   # (B, n, patch_audio_dim)
         # Classifier-free: 随机 drop condition
         if self.training and self.cond_drop_prob > 0:
             drop = torch.rand(B, device=motion.device) < self.cond_drop_prob

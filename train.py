@@ -4,9 +4,11 @@
 import os
 import argparse
 import yaml
+from datetime import datetime
 import torch
 import torch.nn as nn
 from tqdm import tqdm
+from torch.utils.tensorboard import SummaryWriter
 
 from dataset import get_dataloaders
 from dit import MotionDiT
@@ -18,9 +20,10 @@ def load_config(path: str):
         return yaml.safe_load(f)
 
 
-def train_one_epoch(model, diffusion, loader, opt, device, epoch):
+def train_one_epoch(model, diffusion, loader, opt, device, epoch, writer=None, global_step=None, log_every=50):
     model.train()
     total_loss = 0.0
+    step = global_step if global_step is not None else [0]
     pbar = tqdm(loader, desc=f"Epoch {epoch}")
     for batch in pbar:
         motion = batch["motion"].to(device)
@@ -36,6 +39,9 @@ def train_one_epoch(model, diffusion, loader, opt, device, epoch):
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         total_loss += loss.item()
+        if writer is not None and step[0] % log_every == 0:
+            writer.add_scalar("train/batch_loss", loss.item(), step[0])
+        step[0] += 1
         pbar.set_postfix(loss=loss.item())
     return total_loss / len(loader)
 
@@ -52,12 +58,17 @@ def main():
         root=cfg["data"]["root"],
         batch_size=cfg["train"]["batch_size"],
         train_ratio=cfg["data"]["train_ratio"],
+        motion_frames=cfg["data"]["motion_frames"],
+        motion_frames_low=cfg["data"]["motion_frames_low"],
+        audio_frames_low=cfg["data"]["audio_frames_low"],
+        motion_dim=cfg["data"]["motion_dim"],
+        audio_dim=cfg["data"]["audio_dim"],
     )
 
     model = MotionDiT(
         motion_dim=cfg["data"]["motion_dim"],
         audio_dim=cfg["data"]["audio_dim"],
-        motion_frames=cfg["data"]["motion_frames"],
+        motion_frames=cfg["data"]["motion_frames_low"],
         patch_size=cfg["model"]["patch_size"],
         dim=cfg["model"]["dim"],
         depth=cfg["model"]["depth"],
@@ -70,9 +81,9 @@ def main():
         beta_schedule=cfg["diffusion"]["beta_schedule"],
         beta_start=cfg["diffusion"]["beta_start"],
         beta_end=cfg["diffusion"]["beta_end"],
-    )
+    ).to(device)
 
-    opt = torch.optim.AdamW(model.parameters(), lr=cfg["train"]["lr"])
+    opt = torch.optim.AdamW(model.parameters(), lr=float(cfg["train"]["lr"]))
     start_epoch = 0
     if args.resume:
         ckpt = torch.load(args.resume, map_location=device)
@@ -84,9 +95,20 @@ def main():
 
     out_dir = cfg["train"]["output_dir"]
     os.makedirs(out_dir, exist_ok=True)
+    config_stem = os.path.splitext(os.path.basename(args.config))[0]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_dir = os.path.join(out_dir, "runs", f"{config_stem}_{timestamp}")
+    os.makedirs(log_dir, exist_ok=True)
+    writer = SummaryWriter(log_dir=log_dir)
+    global_step = [0]
+    log_every = cfg["train"].get("log_every", 50)
 
     for epoch in range(start_epoch, cfg["train"]["epochs"]):
-        avg_loss = train_one_epoch(model, diffusion, train_loader, opt, device, epoch)
+        avg_loss = train_one_epoch(
+            model, diffusion, train_loader, opt, device, epoch,
+            writer=writer, global_step=global_step, log_every=log_every,
+        )
+        writer.add_scalar("train/epoch_loss", avg_loss, epoch)
         print(f"Epoch {epoch} train loss: {avg_loss:.6f}")
         if (epoch + 1) % cfg["train"]["save_every"] == 0:
             path = os.path.join(out_dir, f"dit_epoch{epoch+1}.pt")
@@ -96,6 +118,8 @@ def main():
                 "optimizer": opt.state_dict(),
             }, path)
             print(f"Saved {path}")
+
+    writer.close()
 
 
 if __name__ == "__main__":

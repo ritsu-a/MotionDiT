@@ -1,5 +1,6 @@
 """
 高斯扩散过程：对 motion 加噪与去噪。
+采样使用 DDIM（确定性，可减少步数）；训练仍用同一前向过程。
 """
 import numpy as np
 import torch
@@ -66,24 +67,68 @@ class GaussianDiffusion(nn.Module):
         posterior_variance = view(self.posterior_variance)
         return posterior_mean, posterior_variance
 
-    @torch.no_grad()
-    def p_sample(self, model: nn.Module, x_t: torch.Tensor, cond: torch.Tensor, t: torch.Tensor):
-        """单步去噪采样."""
-        pred = model(x_t, cond, t)
-        x_start = pred.clamp(-1, 1)
-        posterior_mean, posterior_variance = self.q_posterior_mean_variance(x_start, x_t, t)
-        noise = torch.randn_like(x_t, device=x_t.device)
-        # t=0 时直接返回 x_start，不加噪声
-        out = posterior_mean + torch.sqrt(posterior_variance + 1e-8) * noise
-        mask = (t == 0).view(-1, *([1] * (x_t.dim() - 1)))
-        return torch.where(mask, x_start, out)
+    def _get_sqrt_alpha_bar(self, t, device):
+        """取 t 对应的 sqrt(alpha_bar_t)，形状 (1,1,1) 便于与 (B,T,D) 广播."""
+        if isinstance(t, int):
+            return (self.alphas_cumprod[t] ** 0.5).to(device).view(1, 1, 1)
+        return (self.alphas_cumprod[t] ** 0.5).to(device).view(-1, 1, 1)
+
+    def _get_sqrt_one_minus_alpha_bar(self, t, device):
+        if isinstance(t, int):
+            return (1 - self.alphas_cumprod[t]).clamp(min=1e-8).sqrt().to(device).view(1, 1, 1)
+        return (1 - self.alphas_cumprod[t]).clamp(min=1e-8).sqrt().to(device).view(-1, 1, 1)
 
     @torch.no_grad()
-    def p_sample_loop(self, model: nn.Module, shape: tuple, cond: torch.Tensor):
-        """从 x_T ~ N(0,I) 逐步去噪到 x_0."""
+    def ddim_step(
+        self,
+        x_t: torch.Tensor,
+        t: int,
+        t_prev: int,
+        pred_x0: torch.Tensor,
+        eta: float = 0.0,
+    ) -> torch.Tensor:
+        """
+        DDIM 单步：由 x_t 与预测的 x0 得到 x_{t_prev}（确定性当 eta=0）。
+        pred_x0: 模型预测的 x0，已 clamp 到 [-1,1]。
+        """
+        device = x_t.device
+        pred_x0 = pred_x0.clamp(-1, 1)
+        sqrt_alpha_bar = self._get_sqrt_alpha_bar(t, device)
+        sqrt_one_minus_alpha_bar = self._get_sqrt_one_minus_alpha_bar(t, device)
+        eps = (x_t - sqrt_alpha_bar * pred_x0) / sqrt_one_minus_alpha_bar
+
+        if t_prev < 0:
+            return pred_x0
+        sqrt_alpha_bar_prev = self._get_sqrt_alpha_bar(t_prev, device)
+        sqrt_one_minus_alpha_bar_prev = self._get_sqrt_one_minus_alpha_bar(t_prev, device)
+        # 确定性: x_{t_prev} = sqrt(alpha_bar_{t_prev})*x0 + sqrt(1-alpha_bar_{t_prev})*eps
+        x_prev = sqrt_alpha_bar_prev * pred_x0 + sqrt_one_minus_alpha_bar_prev * eps
+        return x_prev
+
+    def ddim_timestep_sequence(self, ddim_steps: int):
+        """DDIM 使用的降序时间步序列 [T-1, ..., 0]（等间隔）。"""
+        if ddim_steps >= self.timesteps:
+            return list(range(self.timesteps - 1, -1, -1))
+        steps = np.linspace(self.timesteps - 1, 0, ddim_steps).astype(int)
+        return steps.tolist()
+
+    @torch.no_grad()
+    def p_sample_loop_ddim(
+        self,
+        model: nn.Module,
+        shape: tuple,
+        cond: torch.Tensor,
+        ddim_steps: int = 50,
+        eta: float = 0.0,
+    ) -> torch.Tensor:
+        """DDIM 采样：从 x_T ~ N(0,I) 沿子序列去噪到 x_0（步数可小于 T）。"""
         device = next(model.parameters()).device
         x = torch.randn(shape, device=device)
-        for t in reversed(range(self.timesteps)):
+        seq = self.ddim_timestep_sequence(ddim_steps)
+        for i in range(len(seq) - 1):
+            t = seq[i]
+            t_prev = seq[i + 1]
             t_batch = torch.full((shape[0],), t, device=device, dtype=torch.long)
-            x = self.p_sample(model, x, cond, t_batch)
+            pred_x0 = model(x, cond, t_batch).clamp(-1, 1)
+            x = self.ddim_step(x, t, t_prev, pred_x0, eta=eta)
         return x

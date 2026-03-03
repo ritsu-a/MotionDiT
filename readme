@@ -1,0 +1,2 @@
+Visualization of generated motion (npz with qpos):
+    python external/GMR/scripts/vis_npz_motion.py --npz_path samples/motion_0000.npz --video_path samples/motion_0000.mp4 --motion_fps 30

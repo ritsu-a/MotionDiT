@@ -1,4 +1,5 @@
 data
 checkpoints/
 *.pyc
-
+samples/
+checkpoints

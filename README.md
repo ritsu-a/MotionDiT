@@ -39,13 +39,27 @@ python train.py --config configs/default.yaml --resume checkpoints/dit_epoch100.
 
 ## 采样（生成 motion）
 
-在验证集上取 audio，生成对应 motion:
+在验证集上取 audio，生成对应 motion；结果保存为 **npz**（键 `qpos`，可用 GMR 可视化）:
 
 ```bash
 python sample.py --checkpoint checkpoints/dit_epoch200.pt --output_dir samples --num_samples 16 --cfg_scale 3.0
 ```
 
 - `--cfg_scale`: classifier-free guidance 强度，越大越贴合 condition，一般 2.0–5.0。
+- `--render_video`: 生成 npz 后自动用 GMR 渲染为 mp4（需已安装 GMR 环境）。
+- `--motion_fps`、`--robot`: 渲染时的 FPS 与机器人类型，默认 30、`g1_brainco`。
+
+示例（生成并直接渲染视频）:
+
+```bash
+python sample.py --checkpoint checkpoints/dit_epoch200.pt --output_dir samples --num_samples 4 --cfg_scale 3.0 --render_video
+```
+
+仅可视化已有 npz（不跑 sample）:
+
+```bash
+python external/GMR/scripts/vis_npz_motion.py --npz_path samples/motion_0000.npz --video_path samples/motion_0000.mp4 --motion_fps 30
+```
 
 ## 结构概览
 
